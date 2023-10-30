@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+_escape() {
+  echo -nE "${1//\\/\\\\}"
+}
+
+_git_branch() {
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return
+
+  local branch
+  if branch="$(\git symbolic-ref -q HEAD)"; then
+    _escape "${branch#refs/heads/}"
+  else
+    \git rev-parse --short -q HEAD
+  fi
+}
+
+_k8s_context() {
+  local ak_context
+  ak_context="none"
+  if [[ -n "${AK_URL}" ]]; then
+    if [[ "${AK_URL}" == *"kind" ]]; then
+      ak_context="$(cut -d'/' -f3 <<<"${AK_URL}")"
+    elif [[ "${AK_URL}" == "file://"* ]]; then
+      ak_context="$(akutil context current | cut -d'/' -f5)"
+    else
+      ak_context="$(echo "${AK_URL}" | cut -d'/' -f5 | cut -d'?' -f1)"
+    fi
+  fi
+
+  echo "${ak_context}"
+}
+
+_set_prompt() {
+  local -i err=$?
+
+  _blue_color="\[\e[34m\]"
+  _dark_green_color="\[\e[92m\]"
+  _green_color="\[\e[32m\]"
+  _red_color="\[\e[91m\]"
+  _magenta_color="\[\e[95m\]"
+  _bold_text="\[\e[1m\]"
+  _reset="\[\e[0m\]"
+
+  if [[ "${err}" != "0" ]]; then
+    AURA_ERR=" ${_bold_text}${_red_color}${err}${_reset}"
+  else
+    AURA_ERR=""
+  fi
+
+  aura_git="$(_git_branch)"
+  if [[ -n "${aura_git}" ]]; then
+    AURA_GIT=" ${_green_color}(${aura_git})${_reset}"
+  else
+    AURA_GIT=""
+  fi
+
+  local k8s_context
+  k8s_context="$(_k8s_context)"
+  if [[ -n "${k8s_context}" ]]; then
+    AURA_K8S_CONTEXT=" ${_magenta_color}{${k8s_context}}${_reset}"
+  else
+    AURA_K8S_CONTEXT=""
+  fi
+
+  AURA_PREFIX="${_dark_green_color}\[➜\]${_reset}"
+  AURA_PWD=" ${_blue_color}\[[\W]\]${_reset}"
+
+  local aura="${AURA_PREFIX}${AURA_ERR}${AURA_K8S_CONTEXT}${AURA_GIT}${AURA_PWD} "
+  if [[ "${AURA_PS1:-}" != "${aura}" ]]; then
+    AURA_PS1="${aura}"
+    shopt -u promptvars
+    PS1="${AURA_PS1}"
+  fi
+}
+
+_main() {
+  PROMPT_COMMAND=_set_prompt
+}
+
+_main
